@@ -1,0 +1,360 @@
+/* myexec.c */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <iostream>
+#include <unistd.h>
+#include <vector>
+using namespace std;
+#define PROGRAM_NAME "PROJ1"
+
+#define MAX_INPUT_LENGTH 128 // Max characters for input string
+#define MAX_TOKEN_COUNT 32 // Max number of arguments
+void inputCommand(int argc, char *argv1[]);
+void resourcePrint(double start_time);
+void backgroundPrint(int pid);
+// Background process list pointers
+
+
+typedef struct background_proc
+{
+	int pid;
+	double start;
+	char * command;
+	struct background_proc* prev; // Previous command in list
+	struct background_proc* next; // Next command in list
+} background_proc;
+
+background_proc* headProcess = NULL;
+background_proc* tailProcess = NULL;
+int backgroundCount = 0;
+
+background_proc* get_process(int pid)
+{
+	background_proc* process = tailProcess; // looping through process pool starting from the head
+	while (process != NULL)
+	{
+		if (process->pid == pid)
+		{
+			return process;
+		}
+		process = process->prev;
+	}
+	return NULL;
+}
+
+void remove_process(int pid)
+{
+	background_proc *process = get_process(pid);
+	if (process == NULL)
+	{
+		cout << "No background process found to be removed" << endl;
+	}
+	else
+	{
+		printf("%s Process [%s] completed.\n", PROGRAM_NAME, process->command);
+		//print_resource_usage(process->start, pid, exit_status);
+	}
+	// rework on the process list
+	if (process->prev != NULL && process->next != NULL) // normal process in middle of pool
+	{
+		process->prev->next = process->next; // connect previous->next to the next process of current process
+		process->next->prev = process->prev;
+	}
+
+	if (process == headProcess)
+	{
+		headProcess = process->next;
+	}
+
+	if (process == tailProcess)
+	{
+		tailProcess = process->prev;
+	}
+
+	if (process->prev == NULL && process->next == NULL)
+	{
+		cout << "the background is now empty" << endl;
+		headProcess = NULL;
+		tailProcess = NULL;
+	}
+	//free(process);
+	backgroundCount--;
+}
+
+void add_process(int pid, double start_time, char* commandG)
+{
+	background_proc* new_process = (background_proc*)malloc(sizeof(background_proc));
+	if (new_process == NULL)
+	{
+		cout << "no available memory" << endl;
+	}
+	//cout << "tail process is " << tailProcess->pid << endl;
+	//cout << "head process is " << headProcess->pid << endl;
+	new_process->pid = pid;
+	new_process->start = start_time;
+	new_process->command = commandG;
+	// adding the new background to set of background
+	if (tailProcess == NULL || headProcess == NULL) // No list exists
+	{
+		new_process->prev = NULL;
+		new_process->next = NULL;
+		tailProcess = new_process;
+		headProcess = new_process;
+		cout << "here4 " << endl;
+	}
+
+	else // Add to end of list
+	{
+		new_process->prev = tailProcess;
+		new_process->next = NULL;
+		tailProcess->next = new_process;
+		tailProcess = new_process;
+		cout << "here5 " << endl;
+	}
+	backgroundCount++;
+}
+
+void checkDeadProcess() // looping through all background process to check if there is dead process to remove and print out
+{
+	vector<int> deadArray;
+	int pid;
+	int exit_status;
+	int counter = 0;
+	background_proc* process = headProcess;
+	while (process != NULL)
+	{
+		if ((pid = waitpid(process->pid, &exit_status, WNOHANG|WUNTRACED)) > 0)
+		{
+			deadArray.push_back(pid);
+			cout << "PROCESS REMOVED IS " << pid << endl;
+		}
+		process = process->next;
+	}
+	cout << "dead array called" << deadArray.size() << endl;
+	for (int i = 0; i < deadArray.size(); i++)
+	{
+		backgroundPrint(deadArray.at(i));
+		remove_process(deadArray.at(i));
+	}
+}
+
+int main(int argc, char *argv[])
+/* argc -- number of arguments */
+/* argv -- an array of strings */
+{
+	//***
+	struct timeval start;
+	int pid;
+	int i;
+	//***
+	char* input = NULL;
+	size_t buflen = 0;
+	ssize_t input_length = 0;
+	char* inputCmd[MAX_TOKEN_COUNT];
+	char* token = NULL;
+	int token_number = 0;
+	int key = 0;
+	int toggle = 1;
+	int forkKey = 0;
+	int backGroundKey = 0;
+
+	if (argc > 1){ // never enter here if being asked for input
+		key = 1;
+		if (strcmp(argv[1], "cd") == 0)
+		{
+			cout << "directory 2 is " << argv[2] << endl;
+			forkKey = 1; // dont go print statistic
+			int a = chdir(argv[2]);
+			cout << "a 2 is " << a << "\n" << endl;
+		}
+
+		if (strcmp(argv[1], "exit") == 0)
+		{
+			forkKey = 1; //dont go print statistic
+			toggle = 0; // exit loop
+		}
+
+	}
+
+	while (toggle == 1)
+	{
+		//**
+		checkDeadProcess();
+		forkKey = 0;
+		toggle = 1;
+		token_number = 0;
+		token = NULL;
+		buflen = 0;
+		input = NULL;
+		input_length = 0;
+		backGroundKey = 0;
+		//**
+		if (argc == 1)
+		{
+			printf("Enter command and arguments.\n===>");
+			input_length = getline(&input, &buflen, stdin);
+
+			if (input_length > MAX_INPUT_LENGTH) // Input too long
+			{
+				printf("Command too long.\n");
+			}
+			else
+			{
+				while ((token = strtok(input, " \n")) != NULL) // Split input by new line and spaces
+				{
+					input = NULL;
+					if (token_number >= MAX_TOKEN_COUNT)
+					{
+						printf("Too many arguments for command.\n");
+						break;
+					}
+
+					inputCmd[token_number] = token;
+					cout << "input is " << inputCmd[token_number] << endl;
+					token_number++;
+				}
+				inputCmd[token_number] = NULL;
+
+			}
+
+			//*** cd and exit checking if input type in
+			if (strcmp(inputCmd[0], "cd") == 0)
+			{
+				forkKey = 1;
+				cout << "directory 1 is " << inputCmd[1] << endl;
+				//char * addr = "/home/tttrinh/My_Documents";
+				int a = chdir(inputCmd[1]);
+				cout << "a 1 is " << a << "\n" << endl;
+				// no change toggle to continue loop
+			}
+
+			if (strcmp(inputCmd[0], "exit") == 0)
+			{
+				forkKey = 1;
+				toggle = 0;
+			}
+
+			if (strcmp(inputCmd[token_number - 1], "&") == 0){
+				backGroundKey = 1;
+				inputCmd[token_number - 1] = NULL; // remove the command
+				token_number--;
+			}
+
+			if (strcmp(inputCmd[0], "jobs") == 0) // Check if 'jobs' has been entered as command
+			{
+				if (headProcess == NULL)
+				{
+					printf("%s Nothing running in background.\n", PROGRAM_NAME);
+				}
+				else
+				{
+					background_proc* process = headProcess;
+					while (process != NULL)
+					{
+						cout << "JOBS CALLED" << endl;
+						backgroundPrint(process->pid);
+						process = process->next;
+					}
+				}
+			}
+		}
+		else if (argc > 1)
+		{
+			toggle = 0;
+		}
+
+		//*** forking starts here
+		if (forkKey == 0) {
+			if ((pid = fork()) < 0) {
+				cerr << "Fork error\n";
+				exit(1);
+			}
+			else if (pid == 0) { // child 
+				cout << "child (" << getpid() << ") : " << "\n";
+
+				if (key == 0) // execute with input data
+				{
+
+					if ((strcmp(inputCmd[0], "cd") != 0) && (strcmp(inputCmd[0], "exit") != 0))
+					{
+						cout << "**********************" << endl;
+						execvp(inputCmd[0], inputCmd);
+						cout << "**********************" << endl;
+					}
+				}
+				else // execute with argv
+				{
+					if ((strcmp(argv[1], "cd") != 0) && (strcmp(argv[1], "exit") != 0))
+					{
+						cout << "**********************" << endl;
+						execvp(argv[1], argv + 1);
+						cout << "**********************" << endl;
+					}
+				}
+				exit(0);
+			}
+			else { //parents
+				gettimeofday(&start, NULL);
+				double start_time = ((start.tv_sec * 1000) + (start.tv_usec / 1000.0));
+				cout << "parent (" << getpid() << ") : " << "\n" << endl;
+				cout << "background key is " << backGroundKey << endl;
+				// background forground determination 
+				if (backGroundKey == 0) // normal operation foreground process
+				{
+					cout << "normal operation " << endl;
+					wait(0);
+					resourcePrint(start_time);
+				}
+				else // background operation add into the process pool
+				{
+					cout << "BACKGROUND " << endl;
+					if (key == 0) // execute with input data
+					{
+						add_process(pid, start_time, inputCmd[0]);
+					}
+					else // execute with argv
+					{
+						add_process(pid, start_time, argv[1]);
+					}
+				}
+
+			}
+		}
+		//***** forking ends
+	}
+	return 0;
+}
+void resourcePrint(double time_before){
+	struct rusage resource_usage;
+	struct timeval current_time;
+	gettimeofday(&current_time, NULL);
+	double elapsed_time = (current_time.tv_sec * 1000) + (current_time.tv_usec / 1000.0) - time_before;
+	getrusage(RUSAGE_CHILDREN, &resource_usage);
+	cout << "---------------------------------------" << endl;
+	cout << "User CPU time " << ((resource_usage.ru_utime.tv_sec * 1000) + (resource_usage.ru_utime.tv_usec / 1000.0)) << endl;
+	cout << "System CPU time " << ((resource_usage.ru_stime.tv_sec * 1000) + (resource_usage.ru_stime.tv_usec / 1000.0)) << endl;
+	cout << " I/O Page faults " << resource_usage.ru_majflt << endl;
+	cout << " Page faults reclaimed " << resource_usage.ru_minflt << endl;
+	cout << " Max resident " << resource_usage.ru_maxrss << endl;
+	cout << " Gave up CPU voluntarily " << resource_usage.ru_nvcsw << endl;
+	cout << " Gave up CPU involuntarily " << resource_usage.ru_nivcsw << endl;
+	cout << "---------------------------------------" << endl;
+}
+
+void backgroundPrint(int pid){
+	background_proc * chosenBackground = get_process(pid);
+	cout << "---------------------------------------" << endl;
+	cout << "start time is " << chosenBackground->start << endl;
+	cout << "command is " << chosenBackground->command << endl;
+	cout << "pid is " << chosenBackground->pid << endl;
+	cout << "---------------------------------------" << endl;
+
+}
+
