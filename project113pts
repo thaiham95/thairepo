@@ -1,0 +1,184 @@
+/* Thai Trinh
+ * CS3013 A01 Project 1
+ * Purpose: This program takes in user's prompts, process them and execute corresponding command
+ * After execution of user's prompts, it print onto console system resourcse the command used
+ * Limitations: The background tasks handler is not implemented yet.  
+ *
+*/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <iostream>
+#include <unistd.h>
+#include <vector>
+using namespace std;
+
+// Limitations for input arguments and character constant
+#define ALLOWINPUTLENGTH 128 
+#define ALLOWARGLENGTH 32
+
+//function prototype for resourcePrint
+void resourcePrint(double beginTime);
+
+int main(int argc, char *argv[])
+{
+	struct timeval start;
+	int pid;
+	char* input = NULL; 
+	size_t streamSize = 0;
+	ssize_t argLength = 0;
+	char* inputCmd[ALLOWARGLENGTH];
+	char* inArgument = NULL;
+	int argNumber = 0;
+	int key = 0;
+	int toggle = 1;
+	int forkKey = 0;
+	int backGroundKey = 0;
+
+	if (argc > 1){  // Command Execution
+		key = 1;	//key 1 to go execvp with with argv
+		if (strcmp(argv[1], "cd") == 0)
+		{
+			forkKey = 1; // do not print statistic
+			cout << "DIRECT 2 IS " << argv[2] << endl;
+			int a = chdir(argv[2]);
+		}
+
+		if (strcmp(argv[1], "exit") == 0)
+		{
+			forkKey = 1; //do not go print statistic
+			toggle = 0; // do not go into while loop but to fork directly
+		}
+
+	}
+
+	while (toggle == 1) // while loop to keep asking for prompt from users, Command Shell
+	{
+		// Reinitialize data here
+		forkKey = 0;
+		toggle = 1;
+		argNumber = 0;
+		inArgument = NULL;
+		streamSize = 0;
+		input = NULL;
+		argLength = 0;
+		backGroundKey = 0;
+
+		if (argc == 1) // Command Shell, User Prompt operation
+		{
+			cout << "Input command please:: " << endl;
+			argLength = getline(&input, &streamSize, stdin);
+
+			if (argLength > ALLOWINPUTLENGTH) // cannot exceeds 128 characters
+			{
+				cout << "Too Long!!! " << endl;
+				toggle = 0;
+				forkKey = 1;
+			}
+			else
+			{
+				while ((inArgument = strtok(input, " \n")) != NULL) //parse all input command while ignoring white space and store them into inputCmd
+				{
+					input = NULL;
+					if (argNumber > ALLOWARGLENGTH)
+					{
+						toggle = 0;
+						forkKey = 1;
+					}
+					inputCmd[argNumber] = inArgument;
+					argNumber++;
+				}
+				inputCmd[argNumber] = NULL;
+
+			}
+
+			if (strcmp(inputCmd[0], "cd") == 0) //change directory
+			{
+				forkKey = 1;
+				int a = chdir(inputCmd[1]);
+			}
+
+			if (strcmp(inputCmd[0], "exit") == 0) //exit while loop
+			{
+				forkKey = 1;
+				toggle = 0;
+			}
+		}
+		else if (argc > 1)
+		{
+			toggle = 0;
+		}
+
+		// Forking starts here
+		if (forkKey == 0) {
+			if ((pid = fork()) < 0) {
+				cerr << "Fork error\n";
+				exit(1);
+			}
+			else if (pid == 0) { // child 
+				cout << "child (" << getpid() << ") : " << "\n";
+
+				if (key == 0) // execute with input data
+				{
+
+					if ((strcmp(inputCmd[0], "cd") != 0) && (strcmp(inputCmd[0], "exit") != 0))
+					{
+						execvp(inputCmd[0], inputCmd);
+						cout << "\n" << endl;
+					}
+				}
+				else // execute with argv
+				{
+					if ((strcmp(argv[1], "cd") != 0) && (strcmp(argv[1], "exit") != 0))
+					{
+						execvp(argv[1], argv + 1);
+						cout << "\n" << endl;
+					}
+				}
+				exit(0);
+			}
+			else { //parents
+				gettimeofday(&start, NULL);
+				double beginTime = ((start.tv_sec * 1000) + (start.tv_usec / 1000.0));
+				cout << "parent (" << getpid() << ") : " << "\n" << endl;
+				if (backGroundKey == 0) // normal operation foreground process
+				{
+					cout << "normal operation " << endl;
+					wait(0);
+					resourcePrint(beginTime);
+				}
+				else // background operation add into the process pool
+				{
+					cout << "BACKGROUND " << endl;
+				}
+
+			}
+		}// forking ends
+	} //end of while loop
+	return 0;
+}
+/*
+*Function to print all the statistics relating the program execution
+*/
+void resourcePrint(double time_before){
+	struct rusage resource_usage;
+	struct timeval current_time;
+	gettimeofday(&current_time, NULL);
+	getrusage(RUSAGE_CHILDREN, &resource_usage);
+	double elapsed_time = (current_time.tv_sec * 1000) + (current_time.tv_usec / 1000.0) - time_before;
+	cout << "---------------------------------------" << endl;
+	cout << "CPU time User: " << ((resource_usage.ru_utime.tv_sec * 1000) + (resource_usage.ru_utime.tv_usec / 1000.0)) << " milliseconds" << endl;
+	cout << "CPU time Sys: " << ((resource_usage.ru_stime.tv_sec * 1000) + (resource_usage.ru_stime.tv_usec / 1000.0)) << " milliseconds" << endl;
+	cout << " Gave up CPU voluntarily: " << resource_usage.ru_nvcsw << " times" << endl;
+	cout << " Gave up CPU involuntarily: " << resource_usage.ru_nivcsw << " times" << endl;
+	cout << " Page faults major: " << resource_usage.ru_majflt << endl;
+	cout << " Page faults minor: " << resource_usage.ru_minflt << endl;
+	cout << " Max resident: " << resource_usage.ru_maxrss << " kbs" << endl;
+	cout << "---------------------------------------" << endl;
+}
