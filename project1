@@ -58,33 +58,31 @@ void remove_process(int pid)
 	}
 	else
 	{
-		printf("%s Process [%s] completed.\n", PROGRAM_NAME, process->command);
+		cout << "PROCESS COMPLETED IS " << process->pid << endl;
 		//print_resource_usage(process->start, pid, exit_status);
-	}
-	// rework on the process list
-	if (process->prev != NULL && process->next != NULL) // normal process in middle of pool
-	{
-		process->prev->next = process->next; // connect previous->next to the next process of current process
-		process->next->prev = process->prev;
-	}
+		if (process->prev != NULL && process->next != NULL) // normal process in middle of pool
+		{
+			process->prev->next = process->next; // connect previous->next to the next process of current process
+			process->next->prev = process->prev;
+		}
 
-	if (process == headProcess)
-	{
-		headProcess = process->next;
-	}
+		if (process == headProcess)
+		{
+			headProcess = process->next;
+		}
 
-	if (process == tailProcess)
-	{
-		tailProcess = process->prev;
-	}
+		if (process == tailProcess)
+		{
+			tailProcess = process->prev;
+		}
 
-	if (process->prev == NULL && process->next == NULL)
-	{
-		cout << "the background is now empty" << endl;
-		headProcess = NULL;
-		tailProcess = NULL;
+		if (process->prev == NULL && process->next == NULL)
+		{
+			cout << "the background is now empty" << endl;
+			headProcess = NULL;
+			tailProcess = NULL;
+		}
 	}
-	//free(process);
 	backgroundCount--;
 }
 
@@ -95,28 +93,28 @@ void add_process(int pid, double start_time, char* commandG)
 	{
 		cout << "no available memory" << endl;
 	}
-	//cout << "tail process is " << tailProcess->pid << endl;
-	//cout << "head process is " << headProcess->pid << endl;
-	new_process->pid = pid;
-	new_process->start = start_time;
-	new_process->command = commandG;
-	// adding the new background to set of background
-	if (tailProcess == NULL || headProcess == NULL) // No list exists
-	{
-		new_process->prev = NULL;
-		new_process->next = NULL;
-		tailProcess = new_process;
-		headProcess = new_process;
-		cout << "here4 " << endl;
-	}
+	else{
+		new_process->pid = pid;
+		new_process->start = start_time;
+		new_process->command = commandG;
+		// adding the new background to set of background
+		if (tailProcess == NULL || headProcess == NULL) // No list exists
+		{
+			new_process->prev = NULL;
+			new_process->next = NULL;
+			tailProcess = new_process;
+			headProcess = new_process;
+			cout << "here4 " << endl;
+		}
 
-	else // Add to end of list
-	{
-		new_process->prev = tailProcess;
-		new_process->next = NULL;
-		tailProcess->next = new_process;
-		tailProcess = new_process;
-		cout << "here5 " << endl;
+		else // Add to end of list
+		{
+			new_process->prev = tailProcess;
+			new_process->next = NULL;
+			tailProcess->next = new_process;
+			tailProcess = new_process;
+			cout << "here5 " << endl;
+		}
 	}
 	backgroundCount++;
 }
@@ -124,20 +122,21 @@ void add_process(int pid, double start_time, char* commandG)
 void checkDeadProcess() // looping through all background process to check if there is dead process to remove and print out
 {
 	vector<int> deadArray;
-	int pid;
 	int exit_status;
 	int counter = 0;
 	background_proc* process = headProcess;
 	while (process != NULL)
 	{
-		if ((pid = waitpid(process->pid, &exit_status, WNOHANG|WUNTRACED)) > 0)
+		cout << "head pid  is " << process->pid << endl;
+		cout << "head command is " << process->command << endl;
+		if ((waitpid(process->pid, &exit_status, WNOHANG | WUNTRACED)) > 0)
 		{
-			deadArray.push_back(pid);
-			cout << "PROCESS REMOVED IS " << pid << endl;
+			cout << "removed is  " << process->pid << endl;
+			deadArray.push_back(process->pid);
 		}
 		process = process->next;
 	}
-	cout << "dead array called" << deadArray.size() << endl;
+	cout << "dead array called size: " << deadArray.size() << endl;
 	for (int i = 0; i < deadArray.size(); i++)
 	{
 		backgroundPrint(deadArray.at(i));
